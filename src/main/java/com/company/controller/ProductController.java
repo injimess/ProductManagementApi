@@ -1,7 +1,9 @@
 package com.company.controller;
 
-import java.io.IOException;
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -10,17 +12,18 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
 
 import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.hateoas.CollectionModel;
-import org.springframework.hateoas.EntityModel;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -38,20 +41,18 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import com.company.model.*;
+import com.company.files.UploadFileResponse;
+import com.company.model.Product;
 import com.company.service.FileStorageService;
-import com.company.service.ProductService;
 import com.company.service.ProductServiceImpl;
-import com.company.files.UploadFileResponse; 
 
-import reactor.core.publisher.*;
-
-import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.*;
+import reactor.core.publisher.Flux;
 
 @RestController
 @RequestMapping("/product")
-
 public class ProductController {
+	
+	private static final  Logger logger = LoggerFactory.getLogger(ProductController.class); 
 	
 	@Autowired
 	ProductServiceImpl productService = new ProductServiceImpl();
@@ -68,7 +69,47 @@ public class ProductController {
 		List<Product> productList = productService.getProducts();
 		List<Product> products = new ArrayList<Product>();
 		Flux<Product> sequence = Flux.fromIterable(productList);
-		sequence.log().subscribe(products::add); 
+		sequence.log().subscribe(new Subscriber() {
+			
+			private Subscription s;
+			int count; 
+
+			@Override
+			public void onSubscribe(Subscription s) {
+				s.request(2);
+				this.s = s;
+				
+			}
+
+			@Override
+			public void onNext(Object t) {
+				products.add((Product) t);
+				count++; 
+				if (count == 2) {
+					count = 0; 
+					logger.info(" Populated Products : "+ products);
+					s.request(2);
+				} 
+				
+			}
+
+			@Override
+			public void onError(Throwable t) {
+				// TODO Auto-generated method stub
+				
+			}
+
+			@Override
+			public void onComplete() {
+				// TODO Auto-generated method stub
+				
+			}
+			
+			
+		}); 
+		
+		logger.info(products.toString());
+		
 		return new CollectionModel<>(productList).add(linkTo(methodOn(ProductController.class).getProducts()).withSelfRel());
 		
 	}
